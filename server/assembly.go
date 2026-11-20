@@ -290,6 +290,11 @@ func wireTools(pg *db.DB, domainReg map[string]actool.CoreTool) {
 	agent.FindingTrafficBindingEnabled = func() bool { return pg.GetBool(settingAgentTrafficBinding, false) }
 	// 证据附件列表（v0.4.9）：agent 的 list_artifacts 工具读取本任务已登记附件。
 	agent.ListTaskArtifacts = func(taskID string) ([]db.TaskArtifact, error) { return pg.ListTaskArtifacts(taskID) }
+	agent.TaskArtifactQuota = func(taskID string) (count int, bytes int64, maxCount int, maxBytes int64) {
+		count, bytes, _ = pg.CountTaskArtifacts(taskID)
+		maxCount, maxBytes = pg.ArtifactQuota()
+		return
+	}
 	// reporter 的 chat 会话没有任务上下文（v0.4.20）：允许工具按 finding_id
 	// 反查所属任务，避免 list_artifacts 永远返回空。
 	agent.FindingTaskID = func(findingID int64) (string, error) {

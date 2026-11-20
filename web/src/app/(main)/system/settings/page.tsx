@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { CpuIcon, FlaskConicalIcon, GaugeIcon, KeyboardIcon, RadioTowerIcon, SearchIcon, ShieldAlertIcon, TimerResetIcon } from "lucide-react";
+import { CpuIcon, DatabaseIcon, FlaskConicalIcon, GaugeIcon, KeyboardIcon, RadioTowerIcon, SearchIcon, ShieldAlertIcon, TimerResetIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -32,6 +32,10 @@ export default function SystemSettingsPage() {
   const [proxyInput, setProxyInput] = React.useState("");
   const [savingProxy, setSavingProxy] = React.useState(false);
   const [globalProxyInput, setGlobalProxyInput] = React.useState("");
+  const [savedGlobalProxy, setSavedGlobalProxy] = React.useState(""); // #33：状态提示跟已保存值，不跟草稿
+  const [artMaxCount, setArtMaxCount] = React.useState("");
+  const [artMaxBytes, setArtMaxBytes] = React.useState("");
+  const [savingArtifactQuota, setSavingArtifactQuota] = React.useState(false);
   const [savingGlobalProxy, setSavingGlobalProxy] = React.useState(false);
   const [testing, setTesting] = React.useState(false);
   const [loaded, setLoaded] = React.useState(false);
@@ -79,6 +83,9 @@ export default function SystemSettingsPage() {
     setTavilyKeySet(!!s.tavily_key_set);
     setProxyInput(s.web_search_proxy ?? "");
     setGlobalProxyInput(s.global_proxy ?? "");
+    setSavedGlobalProxy(s.global_proxy ?? "");
+    setArtMaxCount(String(s.artifact_max_count ?? ""));
+    setArtMaxBytes(String(Math.round((s.artifact_max_bytes ?? 0) / (1024 * 1024)) || ""));
     setPyInterp(s.python_interpreter ?? "");
     setWorkers(String(s.workers ?? 3));
     setCompactionTokens(String(s.compaction_max_tokens ?? 0));
@@ -374,6 +381,24 @@ export default function SystemSettingsPage() {
       .finally(() => setSavingGlobalProxy(false));
   };
 
+  // #45/#50：证据附件限额（空值=恢复默认 300 件 / 500MB）。
+  const saveArtifactQuota = () => {
+    const cnt = parseInt(artMaxCount, 10);
+    const mb = parseInt(artMaxBytes, 10);
+    setSavingArtifactQuota(true);
+    api
+      .setSettings({
+        artifact_max_count: Number.isFinite(cnt) && cnt > 0 ? cnt : 0,
+        artifact_max_bytes: Number.isFinite(mb) && mb > 0 ? mb * 1024 * 1024 : 0,
+      })
+      .then((st) => {
+        apply(st);
+        toast.success("已保存证据附件限额");
+      })
+      .catch((e) => toast.error(`保存失败：${(e as Error).message}`))
+      .finally(() => setSavingArtifactQuota(false));
+  };
+
 
   // Run a real "test" search ("test") against the CURRENT form values (backend +
   // proxy + entered key), falling back to saved values server-side. Toasts result.
@@ -522,8 +547,49 @@ export default function SystemSettingsPage() {
               </Button>
             </div>
             <p className="text-muted-foreground text-xs">
-              {globalProxyInput.trim() ? "已配置 · 所有目标流量经此代理出网" : "未配置 · 目标流量直连出网"}
+              {savedGlobalProxy.trim() ? "已配置 · 所有目标流量经此代理出网" : "未配置 · 目标流量直连出网"}
+              {globalProxyInput.trim() !== savedGlobalProxy.trim() && (
+                <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-600 dark:text-amber-400">
+                  有未保存的更改 · 保存后生效
+                </span>
+              )}
             </p>
+          </CardContent>
+        </Card>
+
+        <Card className="order-15">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <DatabaseIcon className="size-4" />
+              证据附件限额
+            </CardTitle>
+            <CardDescription>
+              每个任务的证据附件件数与总量上限（#45/#50）。留空/0 = 恢复默认（300 件 / 500MB）。长任务触顶后
+              <code>save_evidence</code> 会失败，可在任务页删除旧附件释放配额，或在这里调高。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <Input
+                className="w-40"
+                inputMode="numeric"
+                placeholder="件数（默认 300）"
+                value={artMaxCount}
+                disabled={!loaded || savingArtifactQuota}
+                onChange={(e) => setArtMaxCount(e.target.value.replace(/[^0-9]/g, ""))}
+              />
+              <Input
+                className="w-44"
+                inputMode="numeric"
+                placeholder="总量 MB（默认 500）"
+                value={artMaxBytes}
+                disabled={!loaded || savingArtifactQuota}
+                onChange={(e) => setArtMaxBytes(e.target.value.replace(/[^0-9]/g, ""))}
+              />
+              <Button type="button" onClick={saveArtifactQuota} disabled={!loaded || savingArtifactQuota}>
+                保存
+              </Button>
+            </div>
           </CardContent>
         </Card>
 

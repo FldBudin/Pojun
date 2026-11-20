@@ -28,6 +28,16 @@ import {
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ArtifactDataViewerDialog } from "@/components/artifact-data-viewer";
 import { ZoomableImageDialog } from "@/components/zoomable-image-dialog";
 import { Input } from "@/components/ui/input";
@@ -1466,6 +1476,28 @@ function TaskArtifactsCard({ taskId }: { taskId: string }) {
       setAssigning(false);
     }
   };
+  const [deleting, setDeleting] = React.useState(false);
+  // #50：触顶后释放配额的入口——删除所选附件（DB 记录 + 落盘文件），带二次确认。
+  const deleteSelected = async () => {
+    if (selected.length === 0) return;
+    setDeleting(true);
+    try {
+      let freed = 0;
+      for (const id of selected) {
+        const r = await api.deleteTaskArtifact(taskId, id);
+        freed += r.freed_bytes ?? 0;
+      }
+      toast.success(`已删除 ${selected.length} 项附件，释放 ${(freed / (1024 * 1024)).toFixed(1)} MB`);
+      setSelected([]);
+      await load({ v: true });
+    } catch (e) {
+      toast.error(`删除失败：${(e as Error).message}`);
+      await load({ v: true });
+    } finally {
+      setDeleting(false);
+      setConfirmDeleteOpen(false);
+    }
+  };
   const scan = async () => {
     setScanning(true);
     try {
@@ -1502,6 +1534,7 @@ function TaskArtifactsCard({ taskId }: { taskId: string }) {
   const fullUrl = (id: number) => api.artifactUrl(taskId, id);
   const downloadUrl = (id: number) => `${api.artifactUrl(taskId, id)}?download=1`;
   const previewUrl = (id: number, page: number) => api.artifactPreviewUrl(taskId, id, page);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
   const [autoBinding, setAutoBinding] = React.useState(false);
   const autoBind = async () => {
     setAutoBinding(true);
@@ -1609,6 +1642,15 @@ function TaskArtifactsCard({ taskId }: { taskId: string }) {
                 </NativeSelect>
                 <Button size="sm" disabled={assigning} onClick={() => void applyAssignment()}>
                   {assigning ? "保存中…" : "应用归属"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={deleting}
+                  onClick={() => setConfirmDeleteOpen(true)}
+                >
+                  <Trash2Icon className="size-3.5" />
+                  删除所选
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
                   清空
@@ -1859,6 +1901,31 @@ function TaskArtifactsCard({ taskId }: { taskId: string }) {
           ) : null
         }
       />
+
+      {/* #50：删除附件二次确认——证据是报告的一部分，误删不可恢复 */}
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>删除 {selected.length} 项证据附件？</AlertDialogTitle>
+            <AlertDialogDescription>
+              记录与落盘文件都会删除，报告中的对应引用会失效，不可恢复。若只是为了释放配额，优先删除大体积且已过验证期的样本。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                void deleteSelected();
+              }}
+            >
+              {deleting ? "删除中…" : "确认删除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

@@ -1015,6 +1015,8 @@ export interface TrafficHost {
 
 // ---- App settings (runtime toggles) ----
 export interface Settings {
+  artifact_max_count?: number; // #45/#50 证据附件每任务件数上限（生效值）
+  artifact_max_bytes?: number; // 证据附件每任务总字节上限（生效值）
   traffic_capture: boolean;
   agent_traffic_binding: boolean; // Agent 自动绑定流量证据，默认关闭；不影响人工绑定
   llm_record: boolean; // LLM 录制开关（默认关）；关闭时不记录任何 LLM 调用

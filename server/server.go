@@ -870,6 +870,7 @@ func (s *Server) Handler() http.Handler {
 	// 证据附件（v0.5.0）：列表 / 单文件下载 / 证据包 zip。
 	mux.HandleFunc("GET /api/tasks/{id}/artifacts", s.listTaskArtifacts)
 	mux.HandleFunc("PATCH /api/tasks/{id}/artifacts/{aid}", s.patchTaskArtifact)    // 改归属（任务级 ↔ 漏洞）
+	mux.HandleFunc("DELETE /api/tasks/{id}/artifacts/{aid}", s.deleteTaskArtifact)  // 删除附件（#50：释放配额）
 	mux.HandleFunc("POST /api/tasks/{id}/artifacts/scan", s.scanTaskArtifacts)      // 历史目录补登记
 	mux.HandleFunc("POST /api/tasks/{id}/artifacts/auto-bind", s.autoBindArtifacts) // 智能关联（v0.4.42）
 	mux.HandleFunc("GET /api/tasks/{id}/artifacts/export", s.exportTaskArtifacts)
@@ -3623,6 +3624,8 @@ func (s *Server) settingsPayload() map[string]any {
 		"tavily_key_set":        strings.TrimSpace(tavilyKey) != "",
 		"web_search_proxy":      proxy,                       // 独立出口代理(http/https/socks5)，空=直连
 		"global_proxy":          s.m.GlobalProxy(),           // 全局出口代理(http/https/socks5)，所有目标流量走它，空=直连
+		"artifact_max_count":    func() int { c, _ := s.m.pg.ArtifactQuota(); return c }(), // #45/#50 证据附件限额（生效值）
+		"artifact_max_bytes":    func() int64 { _, b := s.m.pg.ArtifactQuota(); return b }(),
 		"install_proxy":         s.installProxy(),            // 装机代理：用于宿主工具安装和程序更新等维护请求
 		"python_interpreter":    strings.TrimSpace(pyStored), // 用户/自动设的值(空=用运行时检测)
 		"workers":               s.m.Workers(),               // 并发工作 agent 数(默认3)；对之后启动的任务生效
@@ -3750,6 +3753,9 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		// 意图级软预算（v0.4.28）：单意图 token 上限，500k–20M。
 		IntentBudgetEnabled *bool `json:"intent_budget_enabled"`
 		IntentBudgetTokens  *int  `json:"intent_budget_tokens"`
+		// 证据附件限额（#45/#50）：null=不改；<=0=恢复默认（300 件 / 500MB）。
+		ArtifactMaxCount *int   `json:"artifact_max_count"`
+		ArtifactMaxBytes *int64 `json:"artifact_max_bytes"`
 		// 授权边界守卫与跨任务去重（v0.4.63）。
 		ScopeWriteGuard      *bool `json:"scope_write_guard"`
 		ScopeInheritWrites   *bool `json:"scope_inherit_writes"`
@@ -3967,6 +3973,27 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		if err := s.m.pg.SetSetting(settingIntentBudgetTokens, strconv.Itoa(*req.IntentBudgetTokens)); err != nil {
 			writeErr(w, 500, err.Error())
 			return
+		}
+	}
+
+	if req.ArtifactMaxCount != nil {
+		if *req.ArtifactMaxCount <= 0 {
+			_ = s.m.pg.SetSetting(db.SettingArtifactMaxCount, "")
+		} else {
+			if err := s.m.pg.SetSetting(db.SettingArtifactMaxCount, strconv.Itoa(*req.ArtifactMaxCount)); err != nil {
+				writeErr(w, 500, "保存失败: "+err.Error())
+				return
+			}
+		}
+	}
+	if req.ArtifactMaxBytes != nil {
+		if *req.ArtifactMaxBytes <= 0 {
+			_ = s.m.pg.SetSetting(db.SettingArtifactMaxBytes, "")
+		} else {
+			if err := s.m.pg.SetSetting(db.SettingArtifactMaxBytes, strconv.FormatInt(*req.ArtifactMaxBytes, 10)); err != nil {
+				writeErr(w, 500, "保存失败: "+err.Error())
+				return
+			}
 		}
 	}
 

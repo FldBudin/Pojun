@@ -1,8 +1,9 @@
 package db
 
 import (
-	"strconv"
 	"context"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -103,6 +104,44 @@ FROM task_artifacts WHERE id=$1`, id).
 		return nil, err
 	}
 	return &a, nil
+}
+
+// 证据附件默认限额（v0.4.90 起 #45/#50：可在系统设置用 settings 键覆盖，
+// server 与 pojun-maint 共用同一来源，避免两处常量漂移）。
+const (
+	ArtifactMaxFileBytesDefault = int64(20 << 20)  // 单文件 20MB
+	ArtifactMaxTaskCountDefault = 300              // 每任务件数
+	ArtifactMaxTaskBytesDefault = int64(500 << 20) // 每任务总字节
+
+	SettingArtifactMaxCount = "artifact_max_count"
+	SettingArtifactMaxBytes = "artifact_max_bytes"
+)
+
+// ArtifactQuota 读取生效中的任务级附件限额：settings 有合法正值则覆盖默认。
+func (d *DB) ArtifactQuota() (maxCount int, maxBytes int64) {
+	maxCount, maxBytes = ArtifactMaxTaskCountDefault, ArtifactMaxTaskBytesDefault
+	if d == nil {
+		return
+	}
+	if v, ok, _ := d.GetSetting(SettingArtifactMaxCount); ok {
+		if num, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && num > 0 {
+			maxCount = num
+		}
+	}
+	if v, ok, _ := d.GetSetting(SettingArtifactMaxBytes); ok {
+		if num, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && num > 0 {
+			maxBytes = num
+		}
+	}
+	return
+}
+
+// DeleteTaskArtifact 删除一条附件记录并返回落盘路径与大小（调用方负责删文件，#50）。
+// 必须限定 task_id，防止跨任务 id 误删。
+func (d *DB) DeleteTaskArtifact(taskID string, id int64) (storagePath string, sizeBytes int64, err error) {
+	err = d.QueryRow(`DELETE FROM task_artifacts WHERE id=$1 AND task_id=$2 RETURNING storage_path, size_bytes`,
+		id, taskID).Scan(&storagePath, &sizeBytes)
+	return
 }
 
 // CountTaskArtifacts 返回任务附件数量与总字节数（限额检查用）。

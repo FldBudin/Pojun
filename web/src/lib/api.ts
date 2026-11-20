@@ -796,6 +796,9 @@ export const api = {
   // 修改附件归属（v0.4.20）：finding_id=0 表示任务级。
   updateTaskArtifact: (taskId: string, artifactId: number, findingId: number) =>
     patch<{ artifact: TaskArtifact }>(`/tasks/${taskId}/artifacts/${artifactId}`, { finding_id: findingId }),
+
+  deleteTaskArtifact: (taskId: string, artifactId: number) =>
+    del<{ ok: boolean; freed_bytes: number }>(`/tasks/${taskId}/artifacts/${artifactId}`),
   // 文档预览（v0.4.21）：第 N 页 JPEG / 手动重新生成。
   // 智能关联（v0.4.42）：把任务级数据/日志证据按主机交叉自动归属到唯一命中的漏洞。
   artifactsAutoBind: (taskId: string) =>

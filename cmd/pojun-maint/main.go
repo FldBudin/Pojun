@@ -34,9 +34,6 @@ import (
 )
 
 const (
-	maxFileBytes = 20 << 20
-	maxTaskCount = 300 // 与服务端限额一致（v0.4.23 起 300 个/500MB）
-	maxTaskBytes = 500 << 20
 	maxPerRun    = 60 // 单次扫描最多新增，避免一次把临时文件全收进来
 	artifactsDir = "artifacts"
 )
@@ -87,7 +84,6 @@ func main() {
 		os.Exit(2)
 	}
 }
-
 
 // auditAutoScope 按自动范围归属规则回放 source=auto 的范围行，输出
 // 「应保留/建议清理」清单。只读——删除必须先 pg_dump 备份、人工确认后执行。
@@ -202,6 +198,8 @@ func scanArtifacts(pg *db.DB, dataDir string) {
 			}
 		}
 		count, bytesUsed, _ := pg.CountTaskArtifacts(taskID)
+		// #50：限额与服务端同源（settings 可覆盖，不再各抄一份常量）。
+		maxCount, maxBytes := pg.ArtifactQuota()
 		added, skipped := 0, 0
 		_ = filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
 			if walkErr != nil {
@@ -225,13 +223,13 @@ func scanArtifacts(pg *db.DB, dataDir string) {
 				return nil
 			}
 			info, e := d.Info()
-			if e != nil || info.Size() <= 0 || info.Size() > maxFileBytes {
+			if e != nil || info.Size() <= 0 || info.Size() > db.ArtifactMaxFileBytesDefault {
 				return nil
 			}
-			if added >= maxPerRun || count+added >= maxTaskCount {
+			if added >= maxPerRun || count+added >= maxCount {
 				return nil
 			}
-			if bytesUsed+info.Size() > maxTaskBytes {
+			if bytesUsed+info.Size() > maxBytes {
 				return nil
 			}
 			sha, e := fileSHA(path)

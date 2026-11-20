@@ -14,6 +14,7 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -151,12 +152,14 @@ func (s *Server) RecordArtifact(taskID, findingID int64, runDir, relPath, name, 
 	if info.Size() > maxArtifactFileBytes {
 		return nil, fmt.Errorf("文件超过单附件上限（20MB）：%d 字节", info.Size())
 	}
+	// #45/#50：限额可在系统设置覆盖（artifact_max_count / artifact_max_bytes）。
+	maxCount, maxBytes := pg.ArtifactQuota()
 	if count, total, err := pg.CountTaskArtifacts(taskKey); err == nil {
-		if count >= maxTaskArtifactCount {
-			return nil, fmt.Errorf("本任务附件已达上限（%d 个），请合并或删除后再存", maxTaskArtifactCount)
+		if count >= maxCount {
+			return nil, fmt.Errorf("本任务附件已达上限（%d/%d 个）。请操作员在任务页删除不再需要的附件（证据卡有删除入口），或在系统设置调高 artifact_max_count；list_artifacts 可查看当前配额", count, maxCount)
 		}
-		if total+info.Size() > maxTaskArtifactBytes {
-			return nil, fmt.Errorf("本任务附件总量将超过上限（500MB）")
+		if total+info.Size() > maxBytes {
+			return nil, fmt.Errorf("本任务附件总量将超过上限（%d/%d MB）。请操作员删除旧附件或在系统设置调高 artifact_max_bytes", (total+info.Size())/(1<<20), maxBytes/(1<<20))
 		}
 	}
 
@@ -179,7 +182,41 @@ func (s *Server) listTaskArtifacts(w http.ResponseWriter, r *http.Request) {
 	if list == nil {
 		list = []db.TaskArtifact{}
 	}
-	writeJSON(w, 200, map[string]any{"artifacts": list})
+	// #50：配额随清单一起回，前端与 list_artifacts 工具都能看到剩余空间。
+	count, bytes, _ := pg.CountTaskArtifacts(taskID)
+	maxCount, maxBytes := pg.ArtifactQuota()
+	writeJSON(w, 200, map[string]any{
+		"artifacts": list,
+		"quota": map[string]any{
+			"count": count, "bytes": bytes,
+			"max_count": maxCount, "max_bytes": maxBytes,
+		},
+	})
+}
+
+// deleteTaskArtifact 删除一条任务附件（#50：此前报错说「请删除」却没有删除能力）。
+// 先删 DB 行（限 task_id）再删文件；文件删除失败仅记日志——配额已释放，不回滚。
+func (s *Server) deleteTaskArtifact(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("id")
+	aid, err := strconv.ParseInt(r.PathValue("aid"), 10, 64)
+	if err != nil || aid <= 0 {
+		writeErr(w, 400, "非法附件 ID")
+		return
+	}
+	pg := s.m.PG()
+	if pg == nil {
+		writeErr(w, 500, "PG 不可用")
+		return
+	}
+	path, size, err := pg.DeleteTaskArtifact(taskID, aid)
+	if err != nil {
+		writeErr(w, 404, "附件不存在或不属于该任务")
+		return
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		log.Printf("[artifacts] 附件文件删除失败（DB 已删）path=%s: %v", path, err)
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "freed_bytes": size})
 }
 
 // patchTaskArtifact 修改附件归属（v0.4.20）。body {finding_id}：
