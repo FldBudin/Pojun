@@ -35,8 +35,8 @@ const (
 
 // 意图队列阈值（default 8）：本轮新增上限的基准，0=关闭节流。
 const (
-	settingIntentQueueLimit   = "intent_queue_limit"
-	defaultIntentQueueLimit   = 8
+	settingIntentQueueLimit = "intent_queue_limit"
+	defaultIntentQueueLimit = 8
 )
 
 func intentQueueLimitFromPG(pg *db.DB) int {

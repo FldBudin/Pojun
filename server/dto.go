@@ -196,15 +196,15 @@ type TaskNodeDTO struct {
 
 func taskNodeDTO(n *db.Node) TaskNodeDTO {
 	d := TaskNodeDTO{
-		ID:           i64s(n.ID),
-		Type:         n.Kind,
-		Payload:      rawString(n.Payload),
-		DeleteReason: n.DeleteReason,
+		ID:            i64s(n.ID),
+		Type:          n.Kind,
+		Payload:       rawString(n.Payload),
+		DeleteReason:  n.DeleteReason,
 		BlockedReason: n.BlockedReason,
-		Priority:     n.Priority,
-		State:        n.State,
-		Origin:       n.Origin,
-		TS:           rfc3339(n.CreatedAt),
+		Priority:      n.Priority,
+		State:         n.State,
+		Origin:        n.Origin,
+		TS:            rfc3339(n.CreatedAt),
 	}
 	if n.SourceTaskID > 0 {
 		d.SourceTaskID = i64s(n.SourceTaskID)
@@ -243,8 +243,8 @@ func goalDTO(n *db.Node) GoalDTO {
 		Unverified:       p.Unverified,
 		UnverifiedReason: p.UnverifiedReason,
 		State:            n.State,
-		Origin:    n.Origin,
-		TS:        rfc3339(n.CreatedAt),
+		Origin:           n.Origin,
+		TS:               rfc3339(n.CreatedAt),
 	}
 }
 
@@ -634,6 +634,9 @@ type LLMProfileDTO struct {
 	// 0=继承全局策略 | -1=关闭该层重试 | >0=次数；interval_ms: 0=用默认指数退避 |
 	// >0=改用该固定毫秒间隔。全 0 = 完全跟随全局，即历史行为。
 	Retry db.RetryOverride `json:"retry"`
+	// 厂商预设来源（llmpresets.ID）。'' = 手动配置或旧数据；前端据此在编辑时
+	// 显示厂商标识。纯增量字段，旧客户端忽略。
+	PresetID string `json:"preset_id"`
 }
 
 func llmProfileDTO(p *db.LLMProfile) LLMProfileDTO {
@@ -659,6 +662,7 @@ func llmProfileDTO(p *db.LLMProfile) LLMProfileDTO {
 		SessionHeaderKey: p.SessionHeaderKey,
 		UserAgent:        p.UserAgent,
 		Retry:            p.Retry,
+		PresetID:         p.PresetID,
 	}
 }
 

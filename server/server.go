@@ -31,6 +31,7 @@ import (
 	"github.com/chu0119/pojun/intercept"
 	"github.com/chu0119/pojun/listener"
 	"github.com/chu0119/pojun/llmpool"
+	"github.com/chu0119/pojun/llmpresets"
 	"github.com/chu0119/pojun/llmrec"
 	"github.com/chu0119/pojun/report"
 	"github.com/chu0119/pojun/traffic"
@@ -182,6 +183,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		provByProfile:  map[int64]*provEntry{}, llmHealth: newLLMHealthRegistry(m.pg),
 		taskAgents: map[string]*taskAgentBundle{}, archiveWake: make(chan struct{}, 1)}
 	s.jwtKey.Store(key)
+	llmpresets.InitCache(dataDir) // 厂商模型元数据缓存（7 天 TTL，失败静默用内嵌快照）
 	s.listeners = listener.NewManager()
 	agent.SetListenerManager(s.listeners)
 	s.egress = egress.NewManager()
@@ -1044,6 +1046,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/llm/pool", s.pgLLMPoolStatus)
 	mux.HandleFunc("POST /api/llm/pool/reset", s.pgLLMPoolReset)
 	mux.HandleFunc("POST /api/llm/models", s.pgListModels)
+	// 厂商知识层（v0.4.91 配置重构，只读增量）：预设清单 / 模型元数据推断 / 连通分诊
+	mux.HandleFunc("GET /api/llm/presets", s.llmPresets)
+	mux.HandleFunc("GET /api/llm/model-meta", s.llmModelMeta)
+	mux.HandleFunc("POST /api/llm/check", s.llmCheck)
 
 	// 拦截规则管理
 	mux.HandleFunc("GET /api/intercept/rules", s.interceptListRules)
@@ -3622,8 +3628,8 @@ func (s *Server) settingsPayload() map[string]any {
 		"web_search_backend":    backend,
 		"brave_key_set":         strings.TrimSpace(braveKey) != "",
 		"tavily_key_set":        strings.TrimSpace(tavilyKey) != "",
-		"web_search_proxy":      proxy,                       // 独立出口代理(http/https/socks5)，空=直连
-		"global_proxy":          s.m.GlobalProxy(),           // 全局出口代理(http/https/socks5)，所有目标流量走它，空=直连
+		"web_search_proxy":      proxy,                                                     // 独立出口代理(http/https/socks5)，空=直连
+		"global_proxy":          s.m.GlobalProxy(),                                         // 全局出口代理(http/https/socks5)，所有目标流量走它，空=直连
 		"artifact_max_count":    func() int { c, _ := s.m.pg.ArtifactQuota(); return c }(), // #45/#50 证据附件限额（生效值）
 		"artifact_max_bytes":    func() int64 { _, b := s.m.pg.ArtifactQuota(); return b }(),
 		"install_proxy":         s.installProxy(),            // 装机代理：用于宿主工具安装和程序更新等维护请求

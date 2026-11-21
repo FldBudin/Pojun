@@ -459,6 +459,10 @@ ALTER TABLE llm_profiles ADD  CONSTRAINT llm_profiles_retry_check CHECK (
     retry_connect_attempts >= -1 AND retry_empty_attempts >= -1 AND retry_stream_attempts >= -1
     AND retry_connect_interval_ms >= 0 AND retry_empty_interval_ms >= 0 AND retry_stream_interval_ms >= 0);
 
+-- 厂商预设来源（v0.4.91，#LLM 配置重构）：记录该配置来自 llmpresets 包的哪条
+-- 预设。仅展示/向导关联用途，不参与 provider 构建；'' = 手动配置或旧数据。
+ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS preset_id TEXT NOT NULL DEFAULT '';
+
 -- 思考开关字段 thinking_type，从旧的单一 reasoning_effort 语义一次性拆分而来。
 -- schema.sql 每次启动都执行，故迁移必须只跑一次：仅当该列尚不存在时才回填，
 -- 否则每次启动都会把用户后来手动设的组合覆盖回去。旧 reasoning_effort 语义：

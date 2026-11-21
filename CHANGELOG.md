@@ -55,6 +55,53 @@
 - macOS 冒烟新增 plist `-addr` 与 `lsof` 仅回环断言，并改为 `pull_request`
   （路径命中 install.sh）触发。
 
+## [0.4.91] - 2026-11-21
+### 新增：LLM 配置模块重构（厂商知识层 + 三步新建向导）
+
+- **厂商预设注册表**（`llmpresets/`，预设与代码分离）：内置 32 家，按「官方 / 聚合 / 中转 / 本地」分类（向导顶部分类筛选 chips）：
+  国际官方 7（OpenAI/Anthropic/Gemini/xAI Grok/Mistral/Cohere/Perplexity）+ 聚合网关 8
+  （OpenRouter/Groq/Together/Fireworks/DeepInfra/Cerebras/NVIDIA NIM/硅基流动）+
+  **OpenCode 双端点分立**（Zen 标准网关=按模型分协议的 /zen/v1；Zen Go=Claude Code 兼容
+  单入口 /zen/go，必配 x-opencode-session 会话头）+ 国内官方 9（DeepSeek/智谱/百炼/
+  Kimi/MiniMax/阶跃/千帆/混元/LongCat）+ 本地 4（Ollama/LM Studio/vLLM/llama.cpp）+
+  自定义中转 2（OpenAI 兼容/Anthropic 协议）。全部端点与认证头经官方文档核实
+  （含 DeepInfra /v1/openai、MiniMax 非标准路径用 anthropic 兼容入口、LongCat 多一层
+  /openai、Kimi 域名-Key 配对、零一万物已停服剔除等坑位标注）。
+  每条含 base_url、认证头说明、常用模型与窗口值；模型清单只是拉取失败时的回退
+  候选，不硬依赖（one-api 教训：预置必须与在线拉取结合）。
+- **`GET /api/llm/presets`**：预设清单。
+- **`GET /api/llm/model-meta`**：按模型名自动推断 context window / 是否支持推理
+  ——精确命中 → 带日期后缀前缀（`claude-opus-4-8-20261101` → 200K）→ 厂商前缀
+  （`anthropic/claude-opus-4-5`）→ 厂商预设条目 → 未命中。数据源 models.dev
+  口径：构建期内嵌快照 + 运行时 7 天 TTL 在线刷新（失败静默沿用快照）。
+- **`POST /api/llm/check`**：连通分诊——把模型列表拉取失败分类成人话并给修复指引：
+  key 无效（401/403）/ 端点路径或协议不匹配（404/405，提示换协议预设）/
+  网络不通（超时/DNS/证书，细分提示）/ 余额不足 / 限流 / 200 空列表（网关不开放
+  列表，可直接手填模型名）。
+- **新建走三步向导**（ProfileSheet 重构）：①选厂商（双列卡片网格+分类色点+搜索）
+  → ②粘 Key（显隐切换）→ ③选模型（在线拉取，失败回退预置清单并标注）。
+  保存后**默认勾选「保存并激活」**，一步到可用；现有任务不受影响（下一轮生效）。
+- **context window 自动适配**：选完模型自动按元数据/预设推断填入（可手动覆盖），
+  「留空按 200K」的矛盾文案改为明确的信息提示。
+- **保存后自动两层验证**：连通分诊（/check）→ 真实推理（/test）；**失败不阻止
+  保存**，但警告 toast 给人话与修复指引——「base_url 与 key 不匹配要等任务跑挂
+  才发现」的旧痛点就此闭环。
+- **高级参数折叠**：限速/思考参数/UA/会话头/轮询顺位/重试覆盖收进「高级设置」，
+  基本流程不再被极客字段淹没；0/-1 魔数在 UI 层统一为语义说明。
+- **杂项**：必填星标与字段级校验、草稿关闭二次确认、卡片快捷「测试」按钮
+  （不进编辑抽屉即可验证连通）、协议徽章按协议族配色、Empty 空态组件化。
+- **兼容性**：全部 API 只读增量、`llm_profiles` 仅加 `preset_id` 列（旧数据 ''
+  兼容）、热生效机制不动；旧配置编辑/激活/删除行为逐字节不变（已实测）。
+
+### 测试
+
+- `llmpresets`：预设完整性（12 条/格式枚举/自定义模板留空）+ 元数据推断五路径。
+- `server/llm_presets_api_test.go`：三端点行为（分诊 401/404/200 空/网络不通/
+  缺 key 各分支）。
+- Demo 端到端（Playwright）：预设→粘 Key→在线拉取 31 模型→选 deepseek-v4.1-flash
+  自动填 256K→保存并激活→实测报错透出（OpenCode 需 x-opencode-session 头，
+  预设说明已补充该提示）→旧配置编辑互通。
+
 ## [0.4.90] - 2026-11-20
 ### 修复
 

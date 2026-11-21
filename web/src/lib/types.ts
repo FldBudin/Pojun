@@ -1197,6 +1197,48 @@ export interface LLMProfile {
   user_agent?: string;
   // 本配置对重试的覆盖（建连/空响应/同 provider 安全窗口）。留空/全 0 = 跟随全局策略。
   retry?: LLMRetryOverride;
+  // 厂商预设来源（llmpresets.ID）。空 = 手动配置或旧数据。
+  preset_id?: string;
+}
+
+// ─── LLM 厂商知识层（v0.4.91 配置重构）───
+export interface LLMModelEntry {
+  id: string;
+  context_k: number;
+  reasoning?: boolean;
+}
+export interface LLMPreset {
+  id: string;
+  name: string;
+  category: "official" | "aggregate" | "relay" | "local" | "custom";
+  format: "anthropic" | "openai" | "openai-responses";
+  base_url: string;
+  auth_note: string;
+  note: string;
+  models: LLMModelEntry[];
+}
+export interface LLMModelMeta {
+  model: string;
+  context_k: number;
+  max_output_k?: number;
+  reasoning: boolean;
+  source: "meta" | "preset" | "none";
+}
+export interface LLMCheckResult {
+  ok: boolean;
+  status_class:
+    | "ok"
+    | "key_invalid"
+    | "path_or_format"
+    | "network"
+    | "server_error"
+    | "empty_list"
+    | "missing_key"
+    | "unknown";
+  error_human?: string;
+  error?: string;
+  models?: string[];
+  latency_ms?: number;
 }
 
 // ---- LLM 重试策略 ----

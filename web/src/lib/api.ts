@@ -80,6 +80,9 @@ import type {
   PromptVersion,
   SessionTokenUsage,
   Settings,
+  LLMPreset,
+  LLMModelMeta,
+  LLMCheckResult,
   AuthCheckResult,
   TaskAuthConfigInput,
   TaskArtifact,
@@ -1286,7 +1289,8 @@ export const api = {
     max_tokens_field?: string; // ""=max_tokens(默认) | "max_completion_tokens"（仅 openai 格式）
     session_header_key?: string; // 非空=每次请求带该 HTTP 头，头值=当前会话 session id；""=不发送
     user_agent?: string; // LLM 请求的 User-Agent；""=保持 SDK/Go 默认
-    retry?: LLMRetryOverride; // 本配置的重试覆盖；各项留 0 = 跟随全局重试策略
+    retry?: LLMRetryOverride;
+    preset_id?: string; // 本配置的重试覆盖；各项留 0 = 跟随全局重试策略
   }) => post<{ id: number }>("/llm/profiles", p),
   deleteLLMProfile: (id: string) => del<{ deleted: number }>(`/llm/profiles/${id}`),
   activateLLMProfile: (id: string) => post<{ ok: boolean }>("/llm/profiles/active", { id: Number(id) }),
@@ -1299,6 +1303,19 @@ export const api = {
   saveLLMRetryPolicy: (p: LLMRetryPolicy) => post<LLMRetryPolicy>("/llm/retry-policy", p),
   fetchLLMModels: (provider: string, base_url: string, api_key: string, proxy = "", profile_id?: number, user_agent = "") =>
     post<{ ok: boolean; error?: string; models?: string[] }>("/llm/models", {
+      provider,
+      base_url,
+      api_key,
+      proxy,
+      profile_id,
+      user_agent,
+    }),
+
+  // 厂商知识层（v0.4.91）：预设清单 / 模型元数据推断 / 连通分诊
+  llmPresets: () => get<{ presets: LLMPreset[] }>("/llm/presets"),
+  llmModelMeta: (model: string) => get<LLMModelMeta>(`/llm/model-meta?model=${encodeURIComponent(model)}`),
+  llmCheck: (provider: string, base_url: string, api_key: string, proxy = "", profile_id?: number, user_agent = "") =>
+    post<LLMCheckResult>("/llm/check", {
       provider,
       base_url,
       api_key,
